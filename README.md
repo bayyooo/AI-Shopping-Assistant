@@ -84,7 +84,7 @@ Launch a functional MVP in **6 weeks** using SMS, Flask backend, GPT-4 for AI lo
 
 ### Week 6 – Testing & Beta
 - ⬜ End-to-end testing
-- ⬜ Invite 10-20 users to test
+- ⬜ Invite 5 users to test
 - ⬜ Debug + refine AI logic
 
 ---
