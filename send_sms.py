@@ -1,7 +1,14 @@
 from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
+from firebase_config import init_firebase
+
+
+
 
 app = Flask(__name__)
+
+# Initialize Firebase DB
+db = init_firebase()
 
 @app.route("/")
 def home():
@@ -9,17 +16,20 @@ def home():
 
 @app.route("/sms", methods=["POST"])
 def sms_reply():
-    print("WEBHOOK RECEIVED!")
-    print("Form data:", request.form)
-    print("Headers:", request.headers)
     incoming_msg = request.form.get("Body", "")
-    incoming_msg = request.form.get("Body", "")  # Get the SMS message text
-    resp = MessagingResponse()  # Create a Twilio response object
-    resp.message(f"You said: {incoming_msg}")  # Add response message
-    xml_response = str(resp)  # Convert response to XML
-    print("Twilio Response:", xml_response)  # Print response in Flask logs
+    user_number = request.form.get("From", "")
+    
+    # Save the SMS to Firestore
+    db.collection("messages").add({
+        "phone": user_number,
+        "text": incoming_msg,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
 
-    return Response(xml_response, content_type="application/xml")  # Force correct Content-Type
+      # Reply to user
+    resp = MessagingResponse()
+    resp.message(f"You said: {incoming_msg}")
+    return Response(str(resp), content_type="application/xml")
 
 
 if __name__ == "__main__":
