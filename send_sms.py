@@ -9,6 +9,10 @@ def home():
 
 @app.route("/sms", methods=["POST"])
 def sms_reply():
+    print("WEBHOOK RECEIVED!")
+    print("Form data:", request.form)
+    print("Headers:", request.headers)
+    incoming_msg = request.form.get("Body", "")
     incoming_msg = request.form.get("Body", "")  # Get the SMS message text
     resp = MessagingResponse()  # Create a Twilio response object
     resp.message(f"You said: {incoming_msg}")  # Add response message
@@ -19,4 +23,4 @@ def sms_reply():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=5000)
