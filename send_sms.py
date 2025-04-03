@@ -142,6 +142,20 @@ def home():
 
 @app.route("/welcome", methods=["POST"])
 def send_welcome():
+
+     # Try to get JSON data, or fall back to form data
+    data = request.get_json(silent=True)
+    if not data:
+        data = request.form.to_dict()
+    
+    print(f"Received welcome request with data: {data}")  # Debug logging
+    
+    if not data or 'phone' not in data:
+        print("Missing phone number in request")
+        return "Missing phone number", 400
+    
+    user_number = data['phone']
+    print(f"Processing welcome for phone: {user_number}")
     # Get the phone number from the request
     data = request.get_json()
     if not data or 'phone' not in data:
