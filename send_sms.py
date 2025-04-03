@@ -58,7 +58,7 @@ def sms_reply():
 
       # Reply to user
     resp = MessagingResponse()
-    resp.message(f"You said: {incoming_msg}")
+    resp.message(response_text)
     return Response(str(resp), content_type="application/xml")
 
 
