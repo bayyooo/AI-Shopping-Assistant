@@ -28,6 +28,44 @@ def determine_intent(message): #this is gonna take th users message and figure o
         
     return "unknown", None
 
+def extract_budget_amount(message):
+    # Look for a dollar amount in the message (like $20 or $20.50)
+    dollar_pattern = r'\$(\d+(?:\.\d+)?)'
+    matches = re.findall(dollar_pattern, message)
+    
+    if matches:
+        # Return the first dollar amount found, converted to a float
+        return float(matches[0])
+    return None
+def extract_budget_amount(message):
+    """
+    Extracts the dollar amount from a budget setting message.
+    For example: "set budget to $20" -> 20.0
+    """
+    # Look for a dollar amount in the message (like $20 or $20.50)
+    dollar_pattern = r'\$(\d+(?:\.\d+)?)'
+    matches = re.findall(dollar_pattern, message)
+    
+    if matches:
+        # Return the first dollar amount found, converted to a float
+        return float(matches[0])
+    return None
+
+def set_budget(user_number, message):
+    amount = extract_budget_amount(message)
+    
+    if not amount:
+        return "Sorry, I couldn't understand the budget amount. Please try again with a dollar amount like $20."
+    
+    # Save the budget to Firestore
+    db.collection("budgets").document(user_number).set({
+        "amount": amount,
+        "created_at": firestore.SERVER_TIMESTAMP
+    })
+    
+    return f"Great! I've set your budget to ${amount:.2f}. I'll help you keep track of your spending."
+
+
 @app.route("/")
 def home():
     return "Flask is running! 🎉"
@@ -47,7 +85,7 @@ def sms_reply():
 
      # Create a response based on the intent
     if intent == "set_budget":
-        response_text = "I'll help you set a budget! (i havent doen this yet )"
+        response_text = set_budget(user_number, incoming_msg)
     elif intent == "track_purchase":
         response_text = "I'll record your purchase! (havent done this yet either)"
     elif intent == "help":
