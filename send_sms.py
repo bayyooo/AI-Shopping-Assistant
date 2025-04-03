@@ -51,7 +51,7 @@ def sms_reply():
     elif intent == "track_purchase":
         response_text = "I'll record your purchase! (havent done this yet either)"
     elif intent == "help":
-        response_text = "Here's how to use me: \n- Set a budget: 'Set budget $100'\n- Track a purchase: 'Bought coffee for $5'"
+        response_text = "vieja mendiga \n- Set a budget: 'Set budget $100'\n- Track a purchase: 'Bought coffee for $5'"
     else:
         response_text = "I'm not sure what you want. Try saying 'help' for assistance."
     
