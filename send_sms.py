@@ -51,6 +51,70 @@ def extract_budget_amount(message):
         return float(matches[0])
     return None
 
+def extract_purchase_info(message):
+    dollar_pattern = r'\$(\d+(?:\.\d+)?)'
+    matches = re.findall(dollar_pattern, message)
+
+    if not matches:
+        return None, None
+    amount = float(matches[0])
+
+    words = message.lower().split()
+    item = "item"
+# this is gonna look for words between the buy word and "for" or "$"
+    for buy_word in ["bought", "purchased", "spent"]:
+        if buy_word in words:
+            buy_index = words.index(buy_word)
+            for i in range(buy_index + 1, len(words)):
+                if words[i] == "for" or "$" in words[i]:
+                    item_words = words[buy_index + 1:i]
+                    if item_words:
+                        item = " ".join(item_words)
+                    break
+    
+    return item, amount
+
+
+def track_purchase(user_number, message):
+    """
+    Records a purchase and checks it against the user's budget.
+    Returns a confirmation message.
+    """
+    item, amount = extract_purchase_info(message)
+    
+    if not amount:
+        return "Sorry, I couldn't understand the purchase amount. Please try again with a format like 'bought coffee for $5'."
+    
+    # Save the purchase to Firestore
+    db.collection("purchases").add({
+        "phone": user_number,
+        "item": item,
+        "amount": amount,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
+    
+    # Get the user's budget
+    budget_doc = db.collection("budgets").document(user_number).get()
+    
+    if budget_doc.exists:
+        budget = budget_doc.to_dict().get("amount", 0)
+        
+        # Get recent purchases (simple approach - all purchases)
+        purchases = db.collection("purchases").where("phone", "==", user_number).stream()
+        total_spent = sum(purchase.to_dict().get("amount", 0) for purchase in purchases)
+        
+        remaining = budget - total_spent
+        
+        if remaining < 0:
+            return f"I've recorded your {item} purchase for ${amount:.2f}. You've now spent ${total_spent:.2f}, which is ${abs(remaining):.2f} over your ${budget:.2f} budget."
+        else:
+            return f"I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend."
+    else:
+        return f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Text 'set budget $X' to set one."
+
+    
+    
+
 def set_budget(user_number, message):
     amount = extract_budget_amount(message)
     
@@ -87,11 +151,11 @@ def sms_reply():
     if intent == "set_budget":
         response_text = set_budget(user_number, incoming_msg)
     elif intent == "track_purchase":
-        response_text = "I'll record your purchase! (havent done this yet either)"
+        response_text = track_purchase(user_number, incoming_msg)
     elif intent == "help":
-        response_text = "vieja mendiga \n- Set a budget: 'Set budget $100'\n- Track a purchase: 'Bought coffee for $5'"
+        response_text = "this is the menu \n- Set a budget: 'Set budget $100'\n- Track a purchase: 'Bought coffee for $5'"
     else:
-        response_text = "I'm not sure what you want. Try saying 'help' for assistance."
+        response_text = "I dont have a response for that yet hehe. Type 'help' for the commands."
     
 
       # Reply to user
