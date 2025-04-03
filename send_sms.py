@@ -156,32 +156,36 @@ def send_welcome():
     
     user_number = data['phone']
     print(f"Processing welcome for phone: {user_number}")
-    # Get the phone number from the request
-    data = request.get_json()
-    if not data or 'phone' not in data:
-        return "Missing phone number", 400
-    
-    user_number = data['phone']
-    
-    # Initialize Twilio client
-    from twilio.rest import Client
-    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-    
-    # Send welcome message
-    message = client.messages.create(
-        body="Hello welcome to my AI Shopping Assistant! this is to help stay on budget while shopping. Text 'help' to learn how to use me.",
-        from_=TWILIO_PHONE_NUMBER,
-        to=user_number
-    )
-    
-    # Log this in Firebase
-    db.collection("welcome_messages").add({
-        "phone": user_number,
-        "message_sid": message.sid,
-        "timestamp": firestore.SERVER_TIMESTAMP
-    })
-    
-    return "Welcome message sent", 200
+    try:
+        # Print environment variables (first few chars only for security)
+        print(f"SID: {TWILIO_ACCOUNT_SID[:5] if TWILIO_ACCOUNT_SID else 'None'}... Token: {TWILIO_AUTH_TOKEN[:5] if TWILIO_AUTH_TOKEN else 'None'}... Phone: {TWILIO_PHONE_NUMBER}")
+        
+        # Initialize Twilio client
+        from twilio.rest import Client
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        
+        # Send welcome message
+        message = client.messages.create(
+            body="Hello welcome to my AI Shopping Assistant! This helps you stay on budget while shopping. Text 'help' to learn how to use me.",
+            from_=TWILIO_PHONE_NUMBER,
+            to=user_number
+        )
+        
+        # Log this in Firebase
+        db.collection("welcome_messages").add({
+            "phone": user_number,
+            "message_sid": message.sid,
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        
+        print(f"Welcome message sent successfully to {user_number}")
+        return "Welcome message sent", 200
+        
+    except Exception as e:
+        import traceback
+        print(f"Error sending welcome message: {str(e)}")
+        print(traceback.format_exc())
+        return f"Error: {str(e)}", 500
 
 @app.route("/sms", methods=["POST"])
 def sms_reply():
