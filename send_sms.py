@@ -2,11 +2,17 @@ from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 from firebase_config.firebase_config import init_firebase
 from firebase_admin import firestore 
+from dotenv import load_dotenv
+import os
 import re
 import json
 from datetime import datetime
 
 app = Flask(__name__)
+load_dotenv()
+TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
+TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 
 # Initialize Firebase DB
 db = init_firebase()
@@ -133,6 +139,35 @@ def set_budget(user_number, message):
 @app.route("/")
 def home():
     return "Flask is running! 🎉"
+
+@app.route("/welcome", methods=["POST"])
+def send_welcome():
+    # Get the phone number from the request
+    data = request.get_json()
+    if not data or 'phone' not in data:
+        return "Missing phone number", 400
+    
+    user_number = data['phone']
+    
+    # Initialize Twilio client
+    from twilio.rest import Client
+    client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    
+    # Send welcome message
+    message = client.messages.create(
+        body="Hello welcome to my AI Shopping Assistant! this is to help stay on budget while shopping. Text 'help' to learn how to use me.",
+        from_=TWILIO_PHONE_NUMBER,
+        to=user_number
+    )
+    
+    # Log this in Firebase
+    db.collection("welcome_messages").add({
+        "phone": user_number,
+        "message_sid": message.sid,
+        "timestamp": firestore.SERVER_TIMESTAMP
+    })
+    
+    return "Welcome message sent", 200
 
 @app.route("/sms", methods=["POST"])
 def sms_reply():
