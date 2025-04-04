@@ -411,14 +411,8 @@ For example:
 - "my entertainment budget is $50 this month" → period="month", category="entertainment", amount=50
 - "set a $20 coffee budget for the week" → period="week", category="coffee", amount=20
 
-Return a JSON in this format:
-{
-    "intent": "intent_name",
-    "data": {
-        "key1": "value1",
-        "key2": "value2"
-    }
-}
+Return JSON in this exact format without deviating:
+{{"intent": "intent_name", "data": {{"key1": "value1", "key2": "value2"}}}}
 """
         
         response = client.chat.completions.create(
