@@ -283,7 +283,7 @@ def set_voice(user_number, message):
     responses = {
         "gentle": "Voice set to gentle! this one is very nnice ",
         "strict": "Voice set to strict. very direct",
-        "savage": "Voice set to mean. this one is mean"
+        "mean": "Voice set to mean. this one is mean"
     }
     
     return responses.get(voice_type, f"Voice set to {voice_type}!")
