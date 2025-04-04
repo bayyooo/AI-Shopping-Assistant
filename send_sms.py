@@ -35,15 +35,6 @@ def determine_intent(message): #this is gonna take th users message and figure o
     return "unknown", None
 
 def extract_budget_amount(message):
-    # Look for a dollar amount in the message (like $20 or $20.50)
-    dollar_pattern = r'\$(\d+(?:\.\d+)?)'
-    matches = re.findall(dollar_pattern, message)
-    
-    if matches:
-        # Return the first dollar amount found, converted to a float
-        return float(matches[0])
-    return None
-def extract_budget_amount(message):
     """
     Extracts the dollar amount from a budget setting message.
     For example: "set budget to $20" -> 20.0
