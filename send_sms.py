@@ -80,7 +80,7 @@ def track_purchase(user_number, message):
     item, amount = extract_purchase_info(message)
     
     if not amount:
-        return "Sorry, I couldn't understand the purchase amount. Please try again with a format like 'bought coffee for $5'."
+        return "Can u try with a format like 'bought coffee for $5'."
     
     # Save the purchase to Firestore
     db.collection("purchases").add({
@@ -116,7 +116,7 @@ def set_budget(user_number, message):
     amount = extract_budget_amount(message)
     
     if not amount:
-        return "Sorry, I couldn't understand the budget amount. Please try again with a dollar amount like $20."
+        return "Can u try again with a dollar amount like $20."
     
     # Save the budget to Firestore
     db.collection("budgets").document(user_number).set({
@@ -124,7 +124,7 @@ def set_budget(user_number, message):
         "created_at": firestore.SERVER_TIMESTAMP
     })
     
-    return f"Great! I've set your budget to ${amount:.2f}. I'll help you keep track of your spending."
+    return f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending."
 
 
 @app.route("/")
@@ -157,7 +157,7 @@ def send_welcome():
         
         # Send welcome message
         message = client.messages.create(
-            body="Hello welcome to my AI Shopping Assistant! This helps you stay on budget while shopping. Text 'help' to learn how to use me.",
+            body="Hello this is my AI Shopping Assistant. This is supposed to help you stay on budget . if u type HELP youll get a menu",
             from_=TWILIO_PHONE_NUMBER,
             to=user_number
         )
