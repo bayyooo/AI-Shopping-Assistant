@@ -478,6 +478,7 @@ def track_purchase_with_data(user_number, item, amount):
         return "I couldn't understand that amount. Please try something like 'bought coffee for $5'."
 
 def set_voice_with_type(user_number, voice_type):
+
     """
     Sets the user's voice preference using the voice type extracted by AI.
     """
@@ -498,6 +499,33 @@ def set_voice_with_type(user_number, voice_type):
         "gentle": "Voice set to gentle! this one is very nnice ",
         "strict": "Voice set to strict. very direct",
         "mean": "Voice set to mean. this one is mean"
+    }
+    
+    return responses.get(voice_type, f"Voice set to {voice_type}!")
+
+def set_voice(user_number, message):
+    """
+    Sets the user's preferred AI voice/personality.
+    Think of this like choosing between different characters - 
+    like switching between a supportive friend, a serious mentor, 
+    or a tough coach for your spending habits.
+    """
+    voice_type = extract_voice_type(message)
+    
+    if not voice_type:
+        return "I didn't catch which voice you want. Try 'set voice to gentle', 'set voice to strict', or 'set voice to mean'."
+    
+    # Save the voice preference to Firestore
+    db.collection("user_preferences").document(user_number).set({
+        "personality": voice_type,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    # Different response messages based on the selected voice
+    responses = {
+        "gentle": "Voice set to gentle! I'll be supportive and kind as we manage your spending together.",
+        "strict": "Voice set to strict. I'll be direct and clear about your spending habits.",
+        "mean": "Voice set to mean. I won't sugarcoat anything when you're wasting money!"
     }
     
     return responses.get(voice_type, f"Voice set to {voice_type}!")
@@ -564,11 +592,22 @@ def sms_reply():
         "text": incoming_msg,
         "timestamp": firestore.SERVER_TIMESTAMP
     })
+    
+    # Special case for voice change requests without specifying which voice
+    if ("change voice" in incoming_msg.lower() or "change my voice" in incoming_msg.lower() or 
+        "set voice" in incoming_msg.lower()) and not any(voice in incoming_msg.lower() for voice in ["gentle", "strict", "mean"]):
+        # If they just asked to change voice without specifying which one
+        response_text = "Which voice would you like? Options are: gentle, strict, or mean."
+        resp = MessagingResponse()
+        resp.message(response_text)
+        return Response(str(resp), content_type="application/xml")
+    
+    # Use AI to analyze the message
     ai_analysis = analyze_message_with_ai(incoming_msg, user_number)
     intent = ai_analysis["intent"]
     extracted_data = ai_analysis["data"]
 
-     # Create a response based on the intent
+    # Create a response based on the intent
     if intent == "set_budget":
         if "amount" in extracted_data:
             # Use the amount extracted by AI
@@ -576,6 +615,7 @@ def sms_reply():
         else:
             # Fall back to regex extraction
             response_text = set_budget(user_number, incoming_msg)
+            
     elif intent == "track_purchase":
         if "item" in extracted_data and "amount" in extracted_data:
             # Use the item and amount extracted by AI
@@ -583,18 +623,23 @@ def sms_reply():
         else:
             # Fall back to regex extraction
             response_text = track_purchase(user_number, incoming_msg)
+            
     elif intent == "set_voice":
         if "voice_type" in extracted_data:
             # Use the voice type extracted by AI
             response_text = set_voice_with_type(user_number, extracted_data["voice_type"])
         else:
             # Fall back to regex extraction
-            response_text = set_voice_with_type(user_number, incoming_msg)
+            response_text = set_voice(user_number, incoming_msg)
+            
     elif intent == "help":
         response_text = get_help_message(user_number)
+        
     elif intent == "get_spending_summary":
+        # Get spending summary
         time_period = extracted_data.get("time_period", "all")
         response_text = get_spending_for_period(user_number, time_period)
+        
     else:
         # Get a personalized "I don't understand" message
         personality = get_user_personality(user_number)
@@ -606,9 +651,7 @@ def sms_reply():
         }
         response_text = unknowns.get(personality, "I dont have a response for that yet hehe. Type 'help' for the commands.")
     
-    
-
-      # Reply to user
+    # Reply to user
     resp = MessagingResponse()
     resp.message(response_text)
     return Response(str(resp), content_type="application/xml")
