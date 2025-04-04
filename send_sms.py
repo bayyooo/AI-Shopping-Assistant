@@ -384,31 +384,42 @@ def analyze_message_with_ai(message, user_number):
         
         # Prepare prompt for OpenAI
         prompt = f"""
-        As a shopping and budget assistant with a {personality} personality, analyze this message:
-        "{message}"
-        
-        Determine the user's intent and extract any relevant information.
-        
-        Possible intents:
-        - set_budget (extract amount)
-        - track_purchase (extract item, amount, and possibly store)
-        - set_voice (extract voice type: gentle, strict, or mean)
-        - help (no extraction needed)
-        - get_spending_summary (extract time period if any)
-        - reset_budget (no extraction needed)
-        - set_store_budget (extract store and amount)
-        - set_period_budget (extract period: daily/weekly/monthly and amount)
-        - unknown
-        
-        Return a JSON in this format:
-        {{
-            "intent": "intent_name",
-            "data": {{
-                "key1": "value1",
-                "key2": "value2"
-            }}
-        }}
-        """
+As a shopping and budget assistant with a {personality} personality, analyze this message:
+"{message}"
+
+Determine the user's intent and extract any relevant information.
+
+Possible intents:
+- set_budget (extract amount)
+- track_purchase (extract item, amount, and possibly store)
+- set_voice (extract voice type: gentle, strict, or mean)
+- help (no extraction needed)
+- get_spending_summary (extract time period if any)
+- reset_budget (no extraction needed)
+- set_store_budget (extract store and amount)
+- set_period_budget (extract period: daily/weekly/monthly and amount, also extract category if present)
+- unknown
+
+For set_period_budget:
+1. Extract the time period (day/week/month)
+2. Extract the amount
+3. Extract any category the user mentions (food, groceries, entertainment, clothing, gas, etc.)
+4. Users can create their own categories, so extract whatever category they mention
+
+For example:
+- "set my food budget for this week to $10" → period="week", category="food", amount=10
+- "my entertainment budget is $50 this month" → period="month", category="entertainment", amount=50
+- "set a $20 coffee budget for the week" → period="week", category="coffee", amount=20
+
+Return a JSON in this format:
+{
+    "intent": "intent_name",
+    "data": {
+        "key1": "value1",
+        "key2": "value2"
+    }
+}
+"""
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",  
@@ -519,6 +530,153 @@ def track_purchase_with_data(user_number, item, amount):
             
     except (ValueError, TypeError):
         return "I couldn't understand that amount. Please try something like 'bought coffee for $5'."
+
+def track_purchase_with_category(user_number, item, amount, category=None):
+    """
+    Records a purchase with an optional category and checks it against category budgets.
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Purchase amount must be positive. Please try again."
+        
+        # If no category provided, try to guess from the item
+        if not category:
+            # Common categories mapping (you can expand this)
+            category_mappings = {
+                "coffee": "coffee",
+                "lunch": "food",
+                "dinner": "food",
+                "grocery": "groceries",
+                "groceries": "groceries",
+                "gas": "transportation",
+                "uber": "transportation",
+                "lyft": "transportation",
+                "movie": "entertainment",
+                "game": "entertainment",
+                "clothes": "clothing",
+                "shirt": "clothing",
+                "pants": "clothing"
+            }
+            
+            for key, value in category_mappings.items():
+                if key in item.lower():
+                    category = value
+                    break
+        
+        # Save the purchase to Firestore with category info
+        purchase_data = {
+            "phone": user_number,
+            "item": item,
+            "amount": amount,
+            "timestamp": firestore.SERVER_TIMESTAMP
+        }
+        
+        if category:
+            purchase_data["category"] = category.lower()
+            
+        db.collection("purchases").add(purchase_data)
+        
+        # If we have a category, check against category budgets
+        if category:
+            # Get current time period
+            now = datetime.now()
+            
+            # Check daily budget
+            daily_start = datetime(now.year, now.month, now.day)
+            daily_purchases = db.collection("purchases").where("phone", "==", user_number)\
+                .where("category", "==", category.lower())\
+                .where("timestamp", ">=", daily_start)\
+                .stream()
+                
+            daily_spent = sum(purchase.to_dict().get("amount", 0) for purchase in daily_purchases)
+            
+            # Check weekly budget
+            weekly_start = now - timedelta(days=now.weekday())
+            weekly_start = datetime(weekly_start.year, weekly_start.month, weekly_start.day)
+            weekly_purchases = db.collection("purchases").where("phone", "==", user_number)\
+                .where("category", "==", category.lower())\
+                .where("timestamp", ">=", weekly_start)\
+                .stream()
+                
+            weekly_spent = sum(purchase.to_dict().get("amount", 0) for purchase in weekly_purchases)
+            
+            # Check monthly budget
+            monthly_start = datetime(now.year, now.month, 1)
+            monthly_purchases = db.collection("purchases").where("phone", "==", user_number)\
+                .where("category", "==", category.lower())\
+                .where("timestamp", ">=", monthly_start)\
+                .stream()
+                
+            monthly_spent = sum(purchase.to_dict().get("amount", 0) for purchase in monthly_purchases)
+            
+            # Get the budget limits
+            budget_doc = db.collection("period_budgets").document(user_number).get()
+            
+            if budget_doc.exists:
+                budget_data = budget_doc.to_dict()
+                
+                # Check for category-specific budgets
+                daily_budget = budget_data.get(f"daily_{category.lower()}_amount")
+                weekly_budget = budget_data.get(f"weekly_{category.lower()}_amount")
+                monthly_budget = budget_data.get(f"monthly_{category.lower()}_amount")
+                
+                # Get the user's personality
+                personality = get_user_personality(user_number)
+                
+                # Build the response based on budget status
+                response = f"I've recorded your {item} purchase for ${amount:.2f} in your {category} category. "
+                
+                # Add information about category budget status
+                period_info = []
+                
+                if daily_budget and daily_budget > 0:
+                    daily_remaining = daily_budget - daily_spent
+                    if daily_remaining < 0:
+                        period_info.append(f"You're ${abs(daily_remaining):.2f} over your daily {category} budget.")
+                    else:
+                        period_info.append(f"You have ${daily_remaining:.2f} left in your daily {category} budget.")
+                
+                if weekly_budget and weekly_budget > 0:
+                    weekly_remaining = weekly_budget - weekly_spent
+                    if weekly_remaining < 0:
+                        period_info.append(f"You're ${abs(weekly_remaining):.2f} over your weekly {category} budget.")
+                    else:
+                        period_info.append(f"You have ${weekly_remaining:.2f} left in your weekly {category} budget.")
+                
+                if monthly_budget and monthly_budget > 0:
+                    monthly_remaining = monthly_budget - monthly_spent
+                    if monthly_remaining < 0:
+                        period_info.append(f"You're ${abs(monthly_remaining):.2f} over your monthly {category} budget.")
+                    else:
+                        period_info.append(f"You have ${monthly_remaining:.2f} left in your monthly {category} budget.")
+                
+                if period_info:
+                    if personality == "gentle":
+                        response += " ".join(period_info)
+                    elif personality == "strict":
+                        response += " ".join(period_info).replace("You have", "Remaining:").replace("You're", "ALERT: You are")
+                    elif personality == "mean":
+                        over_budget = any("over" in info for info in period_info)
+                        if over_budget:
+                            response += "Congratulations on blowing through another budget. " + " ".join(period_info)
+                        else:
+                            response += "Try not to waste what's left. " + " ".join(period_info)
+                    else:
+                        response += " ".join(period_info)
+                else:
+                    response += f"You don't have a {category} budget set yet. Use 'set {category} budget for week/month to $X' to create one."
+                
+                return response
+            else:
+                return f"I've recorded your {item} purchase for ${amount:.2f} in your {category} category. You don't have any category budgets set up yet."
+        else:
+            # If no category, fall back to regular purchase tracking
+            return track_purchase(user_number, f"bought {item} for ${amount}")
+            
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'spent $25 on groceries'."
 
 def set_voice_with_type(user_number, voice_type):
 
@@ -707,17 +865,48 @@ def set_period_budget(user_number, period, amount):
             return "Budget amount must be positive. Please try again."
         
         # Validate time period
-        valid_periods = ["daily", "weekly", "monthly", "day", "week", "month"]
+        valid_periods = ["daily", "weekly", "monthly", "day", "week", "month", "this week", "this month", "today"]
         if period.lower() not in valid_periods:
             return f"I don't recognize '{period}' as a valid time period. Please use daily, weekly, or monthly."
         
         # Standardize period format
-        if period.lower() in ["day", "daily"]:
-            period = "daily"
-        elif period.lower() in ["week", "weekly"]:
-            period = "weekly"
-        elif period.lower() in ["month", "monthly"]:
-            period = "monthly"
+        standardized_period = period.lower()
+        if any(p in standardized_period for p in ["day", "daily", "today"]):
+            standardized_period = "daily"
+        elif any(p in standardized_period for p in ["week", "weekly", "this week"]):
+            standardized_period = "weekly"
+        elif any(p in standardized_period for p in ["month", "monthly", "this month"]):
+            standardized_period = "monthly"
+        else:
+            return f"I don't recognize '{period}' as a valid time period. Please use daily, weekly, or monthly."
+        # If category is None, check if there's one in the period text
+        if category is None:
+            # This would be from your AI analysis
+            category = None
+
+        # Document structure to save
+        budget_data = {
+            f"{standardized_period}_updated_at": firestore.SERVER_TIMESTAMP
+        }
+
+        # Set the overall period budget if no category
+        if not category:
+            budget_data[f"{standardized_period}_amount"] = amount
+        else:
+            # If there's a category, save that with the period
+            category = category.lower().strip()
+            budget_data[f"{standardized_period}_{category}_amount"] = amount
+            budget_data[f"{standardized_period}_{category}_updated_at"] = firestore.SERVER_TIMESTAMP
+        
+        # Save to Firestore
+        db.collection("period_budgets").document(user_number).set(
+            budget_data, merge=True
+        )
+        
+        # Get the user's personality
+        personality = get_user_personality(user_number)
+
+
         
         # Save the period budget to Firestore
         db.collection("period_budgets").document(user_number).set({
@@ -728,11 +917,17 @@ def set_period_budget(user_number, period, amount):
         # Get the user's personality
         personality = get_user_personality(user_number)
         
+       # Build response message
+        if category:
+            budget_description = f"{category} budget for {standardized_period.replace('ly', '')}"
+        else:
+            budget_description = f"{standardized_period} budget"
+        
         # Different response messages based on the selected voice
         responses = {
-            "gentle": f"Wonderful! I've set your {period} budget to ${amount:.2f}. I'll help you stay on track!",
-            "strict": f"{period.capitalize()} budget set: ${amount:.2f}. I will monitor your spending accordingly.",
-            "mean": f"${amount:.2f} {period}? Let's see how fast you blow through that."
+            "gentle": f"Wonderful! I've set your {budget_description} to ${amount:.2f}. I'll help you stay on track!",
+            "strict": f"{budget_description.capitalize()} set: ${amount:.2f}. I will monitor your spending accordingly.",
+            "mean": f"${amount:.2f} for {budget_description}? Let's see how fast you blow through that."
         }
         
         return responses.get(personality, f"I've set your {period} budget to ${amount:.2f}.")
@@ -830,7 +1025,16 @@ def sms_reply():
             
     elif intent == "track_purchase":
         if "item" in extracted_data and "amount" in extracted_data:
-            if "store" in extracted_data:
+            category = extracted_data.get("category")
+            if category:
+                # Track purchase with category
+                response_text = track_purchase_with_category(
+                    user_number, 
+                    extracted_data["item"], 
+                    extracted_data["amount"],
+                    category
+                )
+            elif "store" in extracted_data:
                 # Track store-specific purchase
                 response_text = track_store_purchase(
                     user_number, 
