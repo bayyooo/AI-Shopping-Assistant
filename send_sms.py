@@ -3,6 +3,9 @@ from twilio.twiml.messaging_response import MessagingResponse
 from firebase_config.firebase_config import init_firebase
 from firebase_admin import firestore 
 from dotenv import load_dotenv
+import openai
+from openai import OpenAI
+import os
 import os
 import re
 import json
@@ -14,6 +17,8 @@ load_dotenv()
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialize Firebase DB
 db = init_firebase()
@@ -200,26 +205,25 @@ def get_spending_summary(user_number):
         
     return response
 
-def get_spending_for_period(user_number, period):
+def get_spending_for_period(user_number, period):# Calculate start and end dates based on period (week, month, etc.)
 
-
-    # Calculate start and end dates based on period (week, month, etc.)
-    # This is like a filter for your spending data
-    # Think of it as looking through a specific section of your spending journal
-    
     now = datetime.now()
     
     if period == "today":
         start_date = datetime(now.year, now.month, now.day)
+        period_name = "today"
     elif period == "week":
         # Start from beginning of week
         start_date = now - timedelta(days=now.weekday())
         start_date = datetime(start_date.year, start_date.month, start_date.day)
+        period_name = "this week"
     elif period == "month":
         start_date = datetime(now.year, now.month, 1)
+        period_name = "this month"
     else:
         # Default to all time
         start_date = None
+        period_name = "all time"
         
     # Query with date filter if needed
     query = db.collection("purchases").where("phone", "==", user_number)
@@ -229,64 +233,38 @@ def get_spending_for_period(user_number, period):
         
     purchases = query.stream()
     
-    # Calculate totals and format response
-    # ... similar to get_spending_summary
-
-    # Calculate start and end dates based on period (week, month, etc.)
-    # This is like a filter for your spending data
-    # Think of it as looking through a specific section of your spending journal
+    # Group purchases by category or item
+    spending_by_item = {}
+    total_spent = 0
     
-    now = datetime.now()
-    
-    if period == "today":
-        start_date = datetime(now.year, now.month, now.day)
-    elif period == "week":
-        # Start from beginning of week
-        start_date = now - timedelta(days=now.weekday())
-        start_date = datetime(start_date.year, start_date.month, start_date.day)
-    elif period == "month":
-        start_date = datetime(now.year, now.month, 1)
-    else:
-        # Default to all time
-        start_date = None
+    for purchase in purchases:
+        data = purchase.to_dict()
+        item = data.get("item", "unknown")
+        amount = data.get("amount", 0)
         
-    # Query with date filter if needed
-    query = db.collection("purchases").where("phone", "==", user_number)
+        if item not in spending_by_item:
+            spending_by_item[item] = 0
+        spending_by_item[item] += amount
+        total_spent += amount
     
-    if start_date:
-        query = query.where("timestamp", ">=", start_date)
-        
-    purchases = query.stream()
+    # Get the user's personality
+    personality = get_user_personality(user_number)
     
-    # Calculate totals and format response
-    # ... similar to get_spending_summary
-
-def set_voice(user_number, message):
-    """
-    Sets the user's preferred AI voice/personality.
-    Think of this like choosing between different characters - 
-    like switching between a supportive friend, a serious mentor, 
-    or a tough coach for your spending habits.
-    """
-    voice_type = extract_voice_type(message)
-    
-    if not voice_type:
-        return "I didn't catch which voice you want. Try 'set voice to gentle', 'set voice to strict', or 'set voice to mean'."
-    
-    # Save the voice preference to Firestore
-    db.collection("user_preferences").document(user_number).set({
-        "personality": voice_type,
-        "updated_at": firestore.SERVER_TIMESTAMP
-    }, merge=True)
-    
-    # Different response messages based on the selected voice
+    # Format a response based on personality
     responses = {
-        "gentle": "Voice set to gentle! this one is very nnice ",
-        "strict": "Voice set to strict. very direct",
-        "mean": "Voice set to mean. this one is mean"
+        "gentle": f"Here's your spending summary for {period_name}. You've spent ${total_spent:.2f} in total.",
+        "strict": f"SPENDING REPORT ({period_name}): ${total_spent:.2f} total expenditure.",
+        "mean": f"You've blown ${total_spent:.2f} {period_name}. Happy now?"
     }
     
-    return responses.get(voice_type, f"Voice set to {voice_type}!")
+    response = responses.get(personality, f"You've spent ${total_spent:.2f} for {period_name}.")
+    response += "\nBreakdown:\n"
+    
+    for item, amount in spending_by_item.items():
+        percent = (amount / total_spent * 100) if total_spent > 0 else 0
+        response += f"- {item}: ${amount:.2f} ({percent:.1f}%)\n"
+        
+    return response
 
 def format_response(user_number, message_type, data):
     """
@@ -343,7 +321,7 @@ def get_help_message(user_number):
 - Set a budget: 'Set budget $100'
 - Track a purchase: 'Bought coffee for $5'
 - Change my AI voice: 'Set voice to gentle/strict/savage'
-- See my spending: 'Show my spending' (coming soon)
+ See my spending: 'Show my spending' or 'What did I spend this week?'
     """
     
     responses = {
@@ -354,7 +332,175 @@ def get_help_message(user_number):
     
     return responses.get(personality, f"this is the menu {base_commands}")
 
+def analyze_message_with_ai(message, user_number):
+    """
+    Uses OpenAI to understand user intent and extract relevant information.
+    This is like having a smart translator that figures out what the user 
+    really wants, even if they don't use the exact keywords we're looking for.
+    """
+    try:
+        # Get the user's personality preference for context
+        personality = get_user_personality(user_number)
+        
+        # Prepare prompt for OpenAI
+        prompt = f"""
+        As a shopping and budget assistant with a {personality} personality, analyze this message:
+        "{message}"
+        
+        Determine the user's intent and extract any relevant information.
+        
+        Possible intents:
+        - set_budget (extract amount)
+        - track_purchase (extract item and amount)
+        - set_voice (extract voice type: gentle, strict, or mean)
+        - help (no extraction needed)
+        - get_spending_summary (extract time period if any)
+        - unknown
+        
+        Return a JSON in this format:
+        {{
+            "intent": "intent_name",
+            "data": {{
+                "key1": "value1",
+                "key2": "value2"
+            }}
+        }}
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",  
+            messages=[
+                {"role": "system", "content": "You are a helpful shopping assistant that analyzes messages and extracts intents and data."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        
+        # Extract and parse the response
+        ai_response = response.choices[0].message.content
+        return json.loads(ai_response)
+        
+    except Exception as e:
+        print(f"Error in AI analysis: {str(e)}")
+        # Return a fallback response
+        return {"intent": "unknown", "data": {}}
 
+def set_budget_with_amount(user_number, amount):
+    """
+    Sets a budget using the amount directly (extracted by AI).
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Budget amount must be positive. Please try again."
+        
+        # Save the budget to Firestore
+        db.collection("budgets").document(user_number).set({
+            "amount": amount,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        # Get the user's personality and return an appropriate response
+        personality = get_user_personality(user_number)
+        
+        responses = {
+            "gentle": f"Wonderful! I've set your budget to ${amount:.2f}. I'll help you stay on track with gentle reminders!",
+            "strict": f"Budget set to ${amount:.2f}. I'll hold you accountable to this limit. No excuses.",
+            "mean": f"Budget: ${amount:.2f}. Let's see if you can actually stick to it this time!"
+        }
+        return responses.get(personality, f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending.")
+        
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'set budget $100'."
+
+def track_purchase_with_data(user_number, item, amount):
+    """
+    Records a purchase using the item and amount directly (extracted by AI).
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Purchase amount must be positive. Please try again."
+            
+        # Save the purchase to Firestore
+        db.collection("purchases").add({
+            "phone": user_number,
+            "item": item,
+            "amount": amount,
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        
+        # Get the user's budget
+        budget_doc = db.collection("budgets").document(user_number).get()
+        
+        # Get the user's personality
+        personality = get_user_personality(user_number)
+        
+        if budget_doc.exists:
+            budget = budget_doc.to_dict().get("amount", 0)
+            
+            # Get recent purchases
+            purchases = db.collection("purchases").where("phone", "==", user_number).stream()
+            total_spent = sum(purchase.to_dict().get("amount", 0) for purchase in purchases)
+            
+            remaining = budget - total_spent
+            
+            # Create responses based on personality and budget status
+            if remaining < 0:
+                # Over budget responses
+                responses = {
+                    "gentle": f"I've recorded your {item} purchase for ${amount:.2f}. You've now spent ${total_spent:.2f}, which is ${abs(remaining):.2f} over your ${budget:.2f} budget. We can work together to get back on track!",
+                    "strict": f"Purchase recorded: {item} for ${amount:.2f}. WARNING: You are now ${abs(remaining):.2f} OVER your ${budget:.2f} budget. You need to stop spending immediately.",
+                    "mean": f"${abs(remaining):.2f} over budget. Congratulations. You're not just failing financially — youre actively proving you don't respect yourself enough to stop."
+                }
+            else:
+                # Under budget responses
+                responses = {
+                    "gentle": f"Great job! I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend!",
+                    "strict": f"Purchase logged: {item} for ${amount:.2f}. Current status: ${total_spent:.2f} spent, ${remaining:.2f} remaining from your ${budget:.2f} budget.",
+                    "mean": f"${total_spent:.2f} down, ${remaining:.2f} left. Dont blow it now — prove to yourself youre not the same reckless mess you were last month."
+                }
+                
+            return responses.get(personality, f"I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend.")
+        else:
+            # No budget set responses
+            responses = {
+                "gentle": f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Would you like to set one? Just text 'set budget $X'.",
+                "strict": f"Purchase logged: {item} for ${amount:.2f}. NOTE: You don't have a budget set. Set one immediately with 'set budget $X'.",
+                "mean": f"${amount:.2f} gone. No budget set. No surprise. Set one now or accept that your wallet will always be empty — like your sense of self-control."
+            }
+            
+            return responses.get(personality, f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Text 'set budget $X' to set one.")
+            
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'bought coffee for $5'."
+
+def set_voice_with_type(user_number, voice_type):
+    """
+    Sets the user's voice preference using the voice type extracted by AI.
+    """
+    # Validate voice type
+    valid_voices = ["gentle", "strict", "mean"]
+    
+    if voice_type not in valid_voices:
+        return f"I don't recognize '{voice_type}' as a valid voice option. Please try 'gentle', 'strict', or 'mean'."
+    
+    # Save the voice preference to Firestore
+    db.collection("user_preferences").document(user_number).set({
+        "personality": voice_type,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    # Different response messages based on the selected voice
+    responses = {
+        "gentle": "Voice set to gentle! this one is very nnice ",
+        "strict": "Voice set to strict. very direct",
+        "mean": "Voice set to mean. this one is mean"
+    }
+    
+    return responses.get(voice_type, f"Voice set to {voice_type}!")
 
 @app.route("/")
 def home():
@@ -418,17 +564,37 @@ def sms_reply():
         "text": incoming_msg,
         "timestamp": firestore.SERVER_TIMESTAMP
     })
-    intent, message_content = determine_intent(incoming_msg)
+    ai_analysis = analyze_message_with_ai(incoming_msg, user_number)
+    intent = ai_analysis["intent"]
+    extracted_data = ai_analysis["data"]
 
      # Create a response based on the intent
     if intent == "set_budget":
-        response_text = set_budget(user_number, incoming_msg)
+        if "amount" in extracted_data:
+            # Use the amount extracted by AI
+            response_text = set_budget_with_amount(user_number, extracted_data["amount"])
+        else:
+            # Fall back to regex extraction
+            response_text = set_budget(user_number, incoming_msg)
     elif intent == "track_purchase":
-        response_text = track_purchase(user_number, incoming_msg)
+        if "item" in extracted_data and "amount" in extracted_data:
+            # Use the item and amount extracted by AI
+            response_text = track_purchase_with_data(user_number, extracted_data["item"], extracted_data["amount"])
+        else:
+            # Fall back to regex extraction
+            response_text = track_purchase(user_number, incoming_msg)
     elif intent == "set_voice":
-        response_text = set_voice(user_number, incoming_msg)
+        if "voice_type" in extracted_data:
+            # Use the voice type extracted by AI
+            response_text = set_voice_with_type(user_number, extracted_data["voice_type"])
+        else:
+            # Fall back to regex extraction
+            response_text = set_voice_with_type(user_number, incoming_msg)
     elif intent == "help":
         response_text = get_help_message(user_number)
+    elif intent == "get_spending_summary":
+        time_period = extracted_data.get("time_period", "all")
+        response_text = get_spending_for_period(user_number, time_period)
     else:
         # Get a personalized "I don't understand" message
         personality = get_user_personality(user_number)
