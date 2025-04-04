@@ -7,6 +7,7 @@ import os
 import re
 import json
 from datetime import datetime
+from datetime import timedelta
 
 app = Flask(__name__)
 load_dotenv()
@@ -71,7 +72,6 @@ def extract_purchase_info(message):
     
     return item, amount
 
-
 def track_purchase(user_number, message):
     """
     Records a purchase and checks it against the user's budget.
@@ -109,9 +109,6 @@ def track_purchase(user_number, message):
     else:
         return f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Text 'set budget $X' to set one."
 
-    
-    
-
 def set_budget(user_number, message):
     amount = extract_budget_amount(message)
     
@@ -125,6 +122,145 @@ def set_budget(user_number, message):
     })
     
     return f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending."
+
+def get_spending_summary(user_number):
+    # Get all purchases for this user
+    purchases = db.collection("purchases").where("phone", "==", user_number).stream()
+    
+    # Group purchases by category or item
+    spending_by_item = {}
+    total_spent = 0
+    
+    for purchase in purchases:
+        data = purchase.to_dict()
+        item = data.get("item", "unknown")
+        amount = data.get("amount", 0)
+        
+        if item not in spending_by_item:
+            spending_by_item[item] = 0
+        spending_by_item[item] += amount
+        total_spent += amount
+        
+    # Format a response
+    response = f"You've spent ${total_spent:.2f} total.\n"
+    response += "Breakdown:\n"
+    
+    for item, amount in spending_by_item.items():
+        response += f"- {item}: ${amount:.2f}\n"
+        
+    return response
+
+def get_spending_for_period(user_number, period):
+
+
+    # Calculate start and end dates based on period (week, month, etc.)
+    # This is like a filter for your spending data
+    # Think of it as looking through a specific section of your spending journal
+    
+    now = datetime.now()
+    
+    if period == "today":
+        start_date = datetime(now.year, now.month, now.day)
+    elif period == "week":
+        # Start from beginning of week
+        start_date = now - timedelta(days=now.weekday())
+        start_date = datetime(start_date.year, start_date.month, start_date.day)
+    elif period == "month":
+        start_date = datetime(now.year, now.month, 1)
+    else:
+        # Default to all time
+        start_date = None
+        
+    # Query with date filter if needed
+    query = db.collection("purchases").where("phone", "==", user_number)
+    
+    if start_date:
+        query = query.where("timestamp", ">=", start_date)
+        
+    purchases = query.stream()
+    
+    # Calculate totals and format response
+    # ... similar to get_spending_summary
+
+    # Calculate start and end dates based on period (week, month, etc.)
+    # This is like a filter for your spending data
+    # Think of it as looking through a specific section of your spending journal
+    
+    now = datetime.now()
+    
+    if period == "today":
+        start_date = datetime(now.year, now.month, now.day)
+    elif period == "week":
+        # Start from beginning of week
+        start_date = now - timedelta(days=now.weekday())
+        start_date = datetime(start_date.year, start_date.month, start_date.day)
+    elif period == "month":
+        start_date = datetime(now.year, now.month, 1)
+    else:
+        # Default to all time
+        start_date = None
+        
+    # Query with date filter if needed
+    query = db.collection("purchases").where("phone", "==", user_number)
+    
+    if start_date:
+        query = query.where("timestamp", ">=", start_date)
+        
+    purchases = query.stream()
+    
+    # Calculate totals and format response
+    # ... similar to get_spending_summary
+
+def set_personality(user_number, personality_type):
+    """
+    Set the AI personality type for a user.
+    personality_type can be: 'gentle', 'strict', 'savage'
+    """
+    db.collection("user_preferences").document(user_number).set({
+        "personality": personality_type,
+        "updated_at": firestore.SERVER_TIMESTAMP
+    }, merge=True)
+    
+    responses = {
+        "gentle": "kind",
+        "strict": "polite but no personality",
+        "mean": "this one is mean >:(!" 
+    }
+    
+    return responses.get(personality_type, "Personality set!")
+
+def format_response(user_number, message_type, data):
+    """
+    Format a response based on the user's chosen personality.
+    Like having different tones for different moods - gentle is like a supportive friend,
+    strict is like a financial advisor, and savage is like a no-nonsense coach.
+    """
+    # Get user's personality preference
+    pref_doc = db.collection("user_preferences").document(user_number).get()
+    
+    if pref_doc.exists:
+        personality = pref_doc.to_dict().get("personality", "gentle")
+    else:
+        personality = "gentle"  # Default
+        
+    # Define response templates for different personalities
+    templates = {
+        "budget_set": {
+            "gentle": "Wonderful! I've set your budget to ${amount:.2f}. I'll help you stay on track!",
+            "strict": "Budget set to ${amount:.2f}. I expect you to stay within this limit.",
+            "savage": "Budget: ${amount:.2f}. bitch u better fucking stick to your budget, do you really like being a broke bitch? Stick to your damn budget before your card declines. If you keep spending like this, you deserve to stay exactly where you are — broke and blaming everything but yourself."
+        },
+        "purchase_tracked": {
+            # Similar structure for purchase tracking responses
+        }
+    }
+    
+    # Select and format the appropriate template
+    if message_type in templates and personality in templates[message_type]:
+        return templates[message_type][personality].format(**data)
+    else:
+        # Fallback to default response
+        return data.get("default_response", "Ok, got it!")
 
 
 @app.route("/")
