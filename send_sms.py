@@ -28,12 +28,31 @@ def determine_intent(message): #this is gonna take th users message and figure o
     # Check for purchase tracking
     if "bought" in message or "purchased" in message or "spent" in message:
         return "track_purchase", message
+    # Check for voice/personality setting
+    if "set voice" in message or "change voice" in message or "set personality" in message:
+        return "set_voice", message
     
     # Check for help request
     if message == "help" or "help" in message:
         return "help", None
         
     return "unknown", None
+
+def extract_voice_type(message):
+    """
+    Extracts the requested voice/personality type from the message.
+    For example: "set voice to strict" -> "strict"
+    """
+    message = message.lower()
+    
+    # Look for specific personality types after keywords
+    voice_types = ["gentle", "strict", "mean"]
+    
+    for voice in voice_types:
+        if voice in message:
+            return voice
+            
+    return None
 
 def extract_budget_amount(message):
     """
@@ -75,7 +94,7 @@ def extract_purchase_info(message):
 def track_purchase(user_number, message):
     """
     Records a purchase and checks it against the user's budget.
-    Returns a confirmation message.
+    Returns a confirmation message based on the user's personality setting.
     """
     item, amount = extract_purchase_info(message)
     
@@ -93,21 +112,44 @@ def track_purchase(user_number, message):
     # Get the user's budget
     budget_doc = db.collection("budgets").document(user_number).get()
     
+    # Get the user's personality
+    personality = get_user_personality(user_number)
+    
     if budget_doc.exists:
         budget = budget_doc.to_dict().get("amount", 0)
         
-        # Get recent purchases (simple approach - all purchases)
+        # Get recent purchases
         purchases = db.collection("purchases").where("phone", "==", user_number).stream()
         total_spent = sum(purchase.to_dict().get("amount", 0) for purchase in purchases)
         
         remaining = budget - total_spent
         
+        # Create responses based on personality and budget status
         if remaining < 0:
-            return f"I've recorded your {item} purchase for ${amount:.2f}. You've now spent ${total_spent:.2f}, which is ${abs(remaining):.2f} over your ${budget:.2f} budget."
+            # Over budget responses
+            responses = {
+                "gentle": f"I've recorded your {item} purchase for ${amount:.2f}. You've now spent ${total_spent:.2f}, which is ${abs(remaining):.2f} over your ${budget:.2f} budget. We can work together to get back on track!",
+                "strict": f"Purchase recorded: {item} for ${amount:.2f}. WARNING: You are now ${abs(remaining):.2f} OVER your ${budget:.2f} budget. You need to stop spending immediately.",
+                "mean": f"${abs(remaining):.2f} over budget. Congratulations. You’re not just failing financially — youre actively proving you don’t respect yourself enough to stop."
+            }
         else:
-            return f"I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend."
+            # Under budget responses
+            responses = {
+                "gentle": f"Great job! I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend!",
+                "strict": f"Purchase logged: {item} for ${amount:.2f}. Current status: ${total_spent:.2f} spent, ${remaining:.2f} remaining from your ${budget:.2f} budget.",
+                "mean": f"${total_spent:.2f} down, ${remaining:.2f} left. Dont blow it now — prove to yourself youre not the same reckless mess you were last month."
+            }
+            
+        return responses.get(personality, f"I've recorded your {item} purchase for ${amount:.2f}. You've spent ${total_spent:.2f} of your ${budget:.2f} budget. You have ${remaining:.2f} left to spend.")
     else:
-        return f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Text 'set budget $X' to set one."
+        # No budget set responses
+        responses = {
+            "gentle": f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Would you like to set one? Just text 'set budget $X'.",
+            "strict": f"Purchase logged: {item} for ${amount:.2f}. NOTE: You don't have a budget set. Set one immediately with 'set budget $X'.",
+            "mean": f"${amount:.2f} gone. No budget set. No surprise. Set one now or accept that your wallet will always be empty — like your sense of self-control."
+        }
+        
+        return responses.get(personality, f"I've recorded your {item} purchase for ${amount:.2f}. You haven't set a budget yet. Text 'set budget $X' to set one.")
 
 def set_budget(user_number, message):
     amount = extract_budget_amount(message)
@@ -120,9 +162,17 @@ def set_budget(user_number, message):
         "amount": amount,
         "created_at": firestore.SERVER_TIMESTAMP
     })
+    # Get the user's personality and return an appropriate response
+    personality = get_user_personality(user_number)
     
-    return f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending."
-
+    responses = {
+        "gentle": f"Wonderful! I've set your budget to ${amount:.2f}. I'll help you stay on track with gentle reminders!",
+        "strict": f"Budget set to ${amount:.2f}. I'll hold you accountable to this limit. No excuses.",
+        "mean": f"Budget: ${amount:.2f}. You already ruined your future once. Keep spending like this and you’ll never escape the pathetic life you built."
+    }
+    
+    return responses.get(personality, f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending.")
+   
 def get_spending_summary(user_number):
     # Get all purchases for this user
     purchases = db.collection("purchases").where("phone", "==", user_number).stream()
@@ -211,23 +261,32 @@ def get_spending_for_period(user_number, period):
     # Calculate totals and format response
     # ... similar to get_spending_summary
 
-def set_personality(user_number, personality_type):
+def set_voice(user_number, message):
     """
-    Set the AI personality type for a user.
-    personality_type can be: 'gentle', 'strict', 'savage'
+    Sets the user's preferred AI voice/personality.
+    Think of this like choosing between different characters - 
+    like switching between a supportive friend, a serious mentor, 
+    or a tough coach for your spending habits.
     """
+    voice_type = extract_voice_type(message)
+    
+    if not voice_type:
+        return "I didn't catch which voice you want. Try 'set voice to gentle', 'set voice to strict', or 'set voice to savage'."
+    
+    # Save the voice preference to Firestore
     db.collection("user_preferences").document(user_number).set({
-        "personality": personality_type,
+        "personality": voice_type,
         "updated_at": firestore.SERVER_TIMESTAMP
     }, merge=True)
     
+    # Different response messages based on the selected voice
     responses = {
-        "gentle": "kind",
-        "strict": "polite but no personality",
-        "mean": "this one is mean >:(!" 
+        "gentle": "Voice set to gentle! this one is very nnice ",
+        "strict": "Voice set to strict. very direct",
+        "savage": "Voice set to mean. this one is mean"
     }
     
-    return responses.get(personality_type, "Personality set!")
+    return responses.get(voice_type, f"Voice set to {voice_type}!")
 
 def format_response(user_number, message_type, data):
     """
@@ -261,6 +320,40 @@ def format_response(user_number, message_type, data):
     else:
         # Fallback to default response
         return data.get("default_response", "Ok, got it!")
+
+def get_user_personality(user_number):
+    """
+    Gets the user's preferred AI personality.
+    Returns 'gentle' if not set.
+    """
+    pref_doc = db.collection("user_preferences").document(user_number).get()
+    
+    if pref_doc.exists and "personality" in pref_doc.to_dict():
+        return pref_doc.to_dict()["personality"]
+    else:
+        return "gentle"  # Default personality
+
+def get_help_message(user_number):
+    """
+    Returns a help message based on the user's personality setting.
+    """
+    personality = get_user_personality(user_number)
+    
+    base_commands = """
+- Set a budget: 'Set budget $100'
+- Track a purchase: 'Bought coffee for $5'
+- Change my AI voice: 'Set voice to gentle/strict/savage'
+- See my spending: 'Show my spending' (coming soon)
+    """
+    
+    responses = {
+        "gentle": f"Hello! Here are the ways I can help you manage your spending:{base_commands}",
+        "strict": f"Command list. Please use exact formatting:{base_commands}",
+        "mean": f"I swear, if you ask one more time... These are the commands. They're not hard. Figure it out:{base_commands}"
+    }
+    
+    return responses.get(personality, f"this is the menu {base_commands}")
+
 
 
 @app.route("/")
@@ -332,10 +425,21 @@ def sms_reply():
         response_text = set_budget(user_number, incoming_msg)
     elif intent == "track_purchase":
         response_text = track_purchase(user_number, incoming_msg)
+    elif intent == "set_voice":
+        response_text = set_voice(user_number, incoming_msg)
     elif intent == "help":
-        response_text = "this is the menu \n- Set a budget: 'Set budget $100'\n- Track a purchase: 'Bought coffee for $5'"
+        response_text = get_help_message(user_number)
     else:
-        response_text = "I dont have a response for that yet hehe. Type 'help' for the commands."
+        # Get a personalized "I don't understand" message
+        personality = get_user_personality(user_number)
+        
+        unknowns = {
+            "gentle": "I'm not sure what you're asking. Type 'help' to see what I can do! <3",
+            "strict": "Unrecognized command. Type 'help' for valid commands.",
+            "savage": "What? That made no sense. Type 'help' if you're confused."
+        }
+        response_text = unknowns.get(personality, "I dont have a response for that yet hehe. Type 'help' for the commands.")
+    
     
 
       # Reply to user
