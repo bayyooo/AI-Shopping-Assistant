@@ -168,7 +168,7 @@ def set_budget(user_number, message):
     responses = {
         "gentle": f"Wonderful! I've set your budget to ${amount:.2f}. I'll help you stay on track with gentle reminders!",
         "strict": f"Budget set to ${amount:.2f}. I'll hold you accountable to this limit. No excuses.",
-        "mean": f"Budget: ${amount:.2f}. You already ruined your future once. Keep spending like this and you’ll never escape the pathetic life you built."
+        "mean": f"Budget: ${amount:.2f}.  bitch u better fucking stick to your budget, do you really like being a broke bitch? Stick to your damn budget before your card declines. If you keep spending like this, you deserve to stay exactly where you are — broke and blaming everything but yourself."
     }
     
     return responses.get(personality, f"Okayy! I set your budget to ${amount:.2f}. Imma help you keep track of your spending.")
@@ -271,7 +271,7 @@ def set_voice(user_number, message):
     voice_type = extract_voice_type(message)
     
     if not voice_type:
-        return "I didn't catch which voice you want. Try 'set voice to gentle', 'set voice to strict', or 'set voice to savage'."
+        return "I didn't catch which voice you want. Try 'set voice to gentle', 'set voice to strict', or 'set voice to mean'."
     
     # Save the voice preference to Firestore
     db.collection("user_preferences").document(user_number).set({
@@ -307,7 +307,7 @@ def format_response(user_number, message_type, data):
         "budget_set": {
             "gentle": "Wonderful! I've set your budget to ${amount:.2f}. I'll help you stay on track!",
             "strict": "Budget set to ${amount:.2f}. I expect you to stay within this limit.",
-            "savage": "Budget: ${amount:.2f}. bitch u better fucking stick to your budget, do you really like being a broke bitch? Stick to your damn budget before your card declines. If you keep spending like this, you deserve to stay exactly where you are — broke and blaming everything but yourself."
+            "mean": "Budget: ${amount:.2f}. bitch u better fucking stick to your budget, do you really like being a broke bitch? Stick to your damn budget before your card declines. If you keep spending like this, you deserve to stay exactly where you are — broke and blaming everything but yourself."
         },
         "purchase_tracked": {
             # Similar structure for purchase tracking responses
@@ -436,7 +436,7 @@ def sms_reply():
         unknowns = {
             "gentle": "I'm not sure what you're asking. Type 'help' to see what I can do! <3",
             "strict": "Unrecognized command. Type 'help' for valid commands.",
-            "savage": "What? That made no sense. Type 'help' if you're confused."
+            "mean": "What? That made no sense. Type 'help' if you're confused."
         }
         response_text = unknowns.get(personality, "I dont have a response for that yet hehe. Type 'help' for the commands.")
     
