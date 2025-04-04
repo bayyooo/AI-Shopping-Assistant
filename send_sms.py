@@ -318,19 +318,59 @@ def get_help_message(user_number):
     personality = get_user_personality(user_number)
     
     base_commands = """
-- Set a budget: 'Set budget $100'
-- Track a purchase: 'Bought coffee for $5'
-- Change my AI voice: 'Set voice to gentle/strict/savage'
- See my spending: 'Show my spending' or 'What did I spend this week?'
+Just talk to me naturally! Here are some examples:
+
+💰 Budgets
+- "Set my budget to $100"
+- "I need a $50 Target budget"
+- "My weekly budget is $200"
+- "Reset my budget"
+
+💸 Tracking Purchases
+- "I spent $5 on coffee"
+- "Bought groceries at Walmart for $45"
+- "Spent $20 on lunch today"
+
+📊 Checking Spending
+- "How much have I spent?"
+- "What's my Target spending?"
+- "Show my weekly spending"
+
+🗣️ Changing My Voice
+- "Change to mean voice"
+- "Make your tone gentle"
+- "Switch to strict mode"
     """
     
     responses = {
-        "gentle": f"Hello! Here are the ways I can help you manage your spending:{base_commands}",
-        "strict": f"Command list. Please use exact formatting:{base_commands}",
-        "mean": f"I swear, if you ask one more time... These are the commands. They're not hard. Figure it out:{base_commands}"
+        "gentle": f"Hello! You can talk to me naturally - no need for specific formats! Here are some examples of what you can say:{base_commands}",
+        "strict": f"You can use natural language input. Here are command examples:{base_commands}",
+        "mean": f"Just talk normally, I'm not stupid. Examples:{base_commands}"
     }
     
     return responses.get(personality, f"this is the menu {base_commands}")
+
+def handle_format_confusion(user_number, intent):
+    """
+    Responds to users who seem to be struggling with formats.
+    """
+    personality = get_user_personality(user_number)
+    
+    examples = {
+        "set_budget": "Instead of 'set budget $100', you could say 'I want to budget $100' or 'My budget is $100'",
+        "track_purchase": "Instead of 'bought coffee for $5', you could say 'I spent $5 on coffee' or even just 'coffee $5'",
+        "set_store_budget": "Instead of 'set Target budget $50', you could say 'I want to spend $50 at Target' or 'My Target budget is $50'"
+    }
+    
+    example = examples.get(intent, "You can talk to me naturally! For example, 'I spent $20 on lunch' or 'How much is left in my budget?'")
+    
+    responses = {
+        "gentle": f"You don't need to use any specific format! {example}. I'm designed to understand natural language, so just talk to me like you would a friend! 😊",
+        "strict": f"Format not required. {example}. Natural language input is accepted.",
+        "mean": f"Why are you trying so hard with these formats? Just talk normally. {example}. It's not rocket science."
+    }
+    
+    return responses.get(personality, f"No need for specific formats! {example}")
 
 def analyze_message_with_ai(message, user_number):
     """
@@ -351,10 +391,13 @@ def analyze_message_with_ai(message, user_number):
         
         Possible intents:
         - set_budget (extract amount)
-        - track_purchase (extract item and amount)
+        - track_purchase (extract item, amount, and possibly store)
         - set_voice (extract voice type: gentle, strict, or mean)
         - help (no extraction needed)
         - get_spending_summary (extract time period if any)
+        - reset_budget (no extraction needed)
+        - set_store_budget (extract store and amount)
+        - set_period_budget (extract period: daily/weekly/monthly and amount)
         - unknown
         
         Return a JSON in this format:
@@ -530,6 +573,175 @@ def set_voice(user_number, message):
     
     return responses.get(voice_type, f"Voice set to {voice_type}!")
 
+def reset_budget(user_number):
+    """
+    Resets the user's budget.
+    """
+    # Delete the budget document
+    db.collection("budgets").document(user_number).delete()
+    
+    # Get the user's personality
+    personality = get_user_personality(user_number)
+    
+    # Different response messages based on the selected voice
+    responses = {
+        "gentle": "I've reset your budget. You can set a new one by texting 'set budget $X'.",
+        "strict": "Budget reset. Set a new budget immediately with 'set budget $X'.",
+        "mean": "Budget deleted. Let me guess, you blew through it too fast? Set a new one or don't - your financial disaster either way."
+    }
+    
+    return responses.get(personality, "Your budget has been reset. Text 'set budget $X' to set a new one.")
+
+def set_store_budget(user_number, store, amount):
+    """
+    Sets a budget for a specific store.
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Store budget amount must be positive. Please try again."
+        
+        # Standardize store name (lowercase, strip extra spaces)
+        store = store.lower().strip()
+        
+        # Save the store budget to Firestore
+        db.collection("store_budgets").add({
+            "phone": user_number,
+            "store": store,
+            "amount": amount,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        # Get the user's personality
+        personality = get_user_personality(user_number)
+        
+        # Different response messages based on the selected voice
+        responses = {
+            "gentle": f"Great! I've set your {store} budget to ${amount:.2f}. I'll help you keep track of your spending there.",
+            "strict": f"Store budget set: {store} - ${amount:.2f}. Stay within this limit.",
+            "mean": f"${amount:.2f} for {store}? Good luck with that. We both know what happened last time."
+        }
+        
+        return responses.get(personality, f"I've set your {store} budget to ${amount:.2f}.")
+        
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'set Target budget $100'."
+
+def track_store_purchase(user_number, store, item, amount):
+    """
+    Records a purchase at a specific store and checks it against the store budget.
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Purchase amount must be positive. Please try again."
+        
+        # Standardize store name
+        store = store.lower().strip()
+        
+        # Save the purchase to Firestore with store info
+        db.collection("purchases").add({
+            "phone": user_number,
+            "item": item,
+            "store": store,
+            "amount": amount,
+            "timestamp": firestore.SERVER_TIMESTAMP
+        })
+        
+        # Get the store budget
+        store_budgets = db.collection("store_budgets").where("phone", "==", user_number).where("store", "==", store).limit(1).stream()
+        store_budget_doc = next(store_budgets, None)
+        
+        # Get the user's personality
+        personality = get_user_personality(user_number)
+        
+        if store_budget_doc:
+            store_budget = store_budget_doc.to_dict().get("amount", 0)
+            
+            # Get purchases from this store
+            store_purchases = db.collection("purchases").where("phone", "==", user_number).where("store", "==", store).stream()
+            store_total = sum(purchase.to_dict().get("amount", 0) for purchase in store_purchases)
+            
+            remaining = store_budget - store_total
+            
+            # Create responses based on personality and budget status
+            if remaining < 0:
+                # Over budget responses
+                responses = {
+                    "gentle": f"I've recorded your {item} purchase at {store} for ${amount:.2f}. You've now spent ${store_total:.2f} there, which is ${abs(remaining):.2f} over your ${store_budget:.2f} budget for this store.",
+                    "strict": f"Purchase recorded: {item} at {store} for ${amount:.2f}. WARNING: You are ${abs(remaining):.2f} OVER your store budget of ${store_budget:.2f}.",
+                    "mean": f"${abs(remaining):.2f} over budget at {store}. Why am I not surprised? At this point just hand them your whole paycheck."
+                }
+            else:
+                # Under budget responses
+                responses = {
+                    "gentle": f"Great job! I've recorded your {item} purchase at {store} for ${amount:.2f}. You've spent ${store_total:.2f} of your ${store_budget:.2f} {store} budget. You have ${remaining:.2f} left to spend there!",
+                    "strict": f"Purchase logged: {item} at {store} for ${amount:.2f}. Current status: ${store_total:.2f} spent, ${remaining:.2f} remaining from your store budget.",
+                    "mean": f"${amount:.2f} at {store}? Fine. You've got ${remaining:.2f} left there. Try not to blow through it all at once."
+                }
+                
+            return responses.get(personality, f"I've recorded your {item} purchase at {store} for ${amount:.2f}. You've spent ${store_total:.2f} of your ${store_budget:.2f} {store} budget.")
+        else:
+            # No store budget set responses
+            responses = {
+                "gentle": f"I've recorded your {item} purchase at {store} for ${amount:.2f}. You haven't set a budget for {store} yet. Would you like to set one?",
+                "strict": f"Purchase logged: {item} at {store} for ${amount:.2f}. NOTE: No budget set for this store. Set one with 'set {store} budget $X'.",
+                "mean": f"Another ${amount:.2f} at {store} with no budget? At least commit to a spending limit before you waste your money."
+            }
+            
+            return responses.get(personality, f"I've recorded your {item} purchase at {store} for ${amount:.2f}. You haven't set a budget for {store}.")
+            
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'bought shirt at Target for $25'."
+
+def set_period_budget(user_number, period, amount):
+    """
+    Sets a budget for a specific time period (day, week, month).
+    """
+    try:
+        # Convert to float and validate
+        amount = float(amount)
+        if amount <= 0:
+            return "Budget amount must be positive. Please try again."
+        
+        # Validate time period
+        valid_periods = ["daily", "weekly", "monthly", "day", "week", "month"]
+        if period.lower() not in valid_periods:
+            return f"I don't recognize '{period}' as a valid time period. Please use daily, weekly, or monthly."
+        
+        # Standardize period format
+        if period.lower() in ["day", "daily"]:
+            period = "daily"
+        elif period.lower() in ["week", "weekly"]:
+            period = "weekly"
+        elif period.lower() in ["month", "monthly"]:
+            period = "monthly"
+        
+        # Save the period budget to Firestore
+        db.collection("period_budgets").document(user_number).set({
+            period: amount,
+            f"{period}_updated_at": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        
+        # Get the user's personality
+        personality = get_user_personality(user_number)
+        
+        # Different response messages based on the selected voice
+        responses = {
+            "gentle": f"Wonderful! I've set your {period} budget to ${amount:.2f}. I'll help you stay on track!",
+            "strict": f"{period.capitalize()} budget set: ${amount:.2f}. I will monitor your spending accordingly.",
+            "mean": f"${amount:.2f} {period}? Let's see how fast you blow through that."
+        }
+        
+        return responses.get(personality, f"I've set your {period} budget to ${amount:.2f}.")
+        
+    except (ValueError, TypeError):
+        return "I couldn't understand that amount. Please try something like 'set weekly budget $200'."
+
+
+
 @app.route("/")
 def home():
     return "Flask is running! 🎉"
@@ -618,8 +830,21 @@ def sms_reply():
             
     elif intent == "track_purchase":
         if "item" in extracted_data and "amount" in extracted_data:
-            # Use the item and amount extracted by AI
-            response_text = track_purchase_with_data(user_number, extracted_data["item"], extracted_data["amount"])
+            if "store" in extracted_data:
+                # Track store-specific purchase
+                response_text = track_store_purchase(
+                    user_number, 
+                    extracted_data["store"], 
+                    extracted_data["item"], 
+                    extracted_data["amount"]
+                )
+            else:
+                # Use the item and amount extracted by AI
+                response_text = track_purchase_with_data(
+                    user_number, 
+                    extracted_data["item"], 
+                    extracted_data["amount"]
+                )
         else:
             # Fall back to regex extraction
             response_text = track_purchase(user_number, incoming_msg)
@@ -632,6 +857,29 @@ def sms_reply():
             # Fall back to regex extraction
             response_text = set_voice(user_number, incoming_msg)
             
+    elif intent == "reset_budget":
+        response_text = reset_budget(user_number)
+        
+    elif intent == "set_store_budget":
+        if "store" in extracted_data and "amount" in extracted_data:
+            response_text = set_store_budget(
+                user_number, 
+                extracted_data["store"], 
+                extracted_data["amount"]
+            )
+        else:
+            response_text = "I couldn't understand the store or amount. Please try something like 'set Target budget $100'."
+            
+    elif intent == "set_period_budget":
+        if "period" in extracted_data and "amount" in extracted_data:
+            response_text = set_period_budget(
+                user_number, 
+                extracted_data["period"], 
+                extracted_data["amount"]
+            )
+        else:
+            response_text = "I couldn't understand the time period or amount. Please try something like 'set weekly budget $200'."
+            
     elif intent == "help":
         response_text = get_help_message(user_number)
         
@@ -641,16 +889,28 @@ def sms_reply():
         response_text = get_spending_for_period(user_number, time_period)
         
     else:
-        # Get a personalized "I don't understand" message
-        personality = get_user_personality(user_number)
+        # Check if it seems like they're trying to use a specific format but failing
+        if any(format_word in incoming_msg.lower() for format_word in ["set budget", "bought", "spent", "set voice"]):
+            intent_guess = "unknown"
+            if "budget" in incoming_msg.lower():
+                intent_guess = "set_budget"
+            elif any(word in incoming_msg.lower() for word in ["bought", "spent", "purchase"]):
+                intent_guess = "track_purchase"
+            elif "voice" in incoming_msg.lower():
+                intent_guess = "set_voice"
+            
+            response_text = handle_format_confusion(user_number, intent_guess)
+        else:
+            # Regular unknown intent response
+            personality = get_user_personality(user_number)
         
-        unknowns = {
-            "gentle": "I'm not sure what you're asking. Type 'help' to see what I can do! <3",
-            "strict": "Unrecognized command. Type 'help' for valid commands.",
-            "mean": "What? That made no sense. Type 'help' if you're confused."
-        }
-        response_text = unknowns.get(personality, "I dont have a response for that yet hehe. Type 'help' for the commands.")
-    
+            unknowns = {
+                "gentle": "I'm not sure what you're asking. Remember, you can talk to me naturally! Type 'help' to see what I can do! <3",
+                "strict": "Unrecognized input. Natural language is accepted. Type 'help' for examples.",
+                "mean": "What? That made no sense. Talk normally. Type 'help' if you're confused."
+            }
+        
+            response_text = unknowns.get(personality, "I dont have a response for that yet hehe. Type 'help' for the commands.")
     # Reply to user
     resp = MessagingResponse()
     resp.message(response_text)
