@@ -10,110 +10,83 @@ By signing up, you’ll receive AI-powered shopping reminders, budget tracking, 
 - Reply **HELP** for commands.
 - Reply **STOP** to unsubscribe anytime.
 
-- # 🛍️ AI Shopping Assistant – MVP README
+**-🛍️ SmartShop AI - Your Personal Shopping Assistant**
+SmartShop AI is an SMS-based shopping assistant that helps you track your spending, set budgets, and make smarter purchasing decisions through personalized AI interactions.
+🌟 Key Features
+💬 Natural Language Understanding
+Talk to your AI assistant however you want! Our advanced AI understands a wide variety of ways to express the same idea:
 
-## Project Overview
-An AI-powered SMS-based shopping assistant that helps users track spending, set budgets, and receive reminders. Built to be convenient, hands-free, and personalized. Users can interact through SMS and voice commands (Siri/Alexa).
+"I spent $5 on coffee" = "bought a coffee for $5" = "coffee was $5" = "$5 for my morning coffee"
+No need to memorize specific commands or formats - just text naturally!
 
----
+**🚀 Getting Started**
+Sign Up Options
 
-## MVP Goal
-Launch a functional MVP in **6 weeks** using SMS, Flask backend, GPT-4 for AI logic, and Firebase/PostgreSQL for data storage.
+Google Doc Sign-up: Fill out our quick form at https://docs.google.com/forms/d/e/1FAIpQLSdCXRf9NGCWu7UDbD9PDn_tncDXlH1Ob3kdcfVFhPOd14ZZPw/viewform?usp=preview
+SMS Sign-up: Text "START" to (469) 718-5810‬
 
----
+After signing up, you'll receive a welcome message and can immediately start tracking your spending!
+Example Ways to Talk to SmartShop
+Copy💰 Setting Budgets (all of these work!)
+- "Set my budget to $100"
+- "I need to stay under $50 at Target"
+- "My weekly budget is $200"
+- "I can spend $150 this month"
+- "Budget reset please"
 
-## Tech Stack
-- **Backend:** Flask (Python)
-- **AI:** OpenAI GPT-4
-- **SMS Integration:** Twilio API
-- **Database:** Firebase or PostgreSQL
-- **Voice Commands:** Siri Shortcuts, Alexa Skills API (basic voice triggers)
-- **Deployment:** Ngrok (local), AWS/GCP (future)
-- **Version Control:** GitHub
-- **Project Management:** Jira
+**💸 Tracking Purchases (say it your way)**
+- "I spent $5 on coffee"
+- "Bought groceries for $45"
+- "Just got a shirt for $20"
+- "Coffee was $3.50"
+- "$12 for lunch today"
 
----
+**📊 Checking Spending (ask however you want)**
+- "How much have I spent?"
+- "What's my Target spending?"
+- "Show my weekly spending"
+- "How much left in my budget?"
+- "Am I over budget?"
 
-##  MVP Features
-### 1. SMS AI Assistant
-- Users can text: "I’m going to Target"
-- AI replies asking what they’re buying and responds with reminders
+**🗣️ Changing Voice (talk naturally)**
+- "Change to mean voice"
+- "Make it gentle please"
+- "I need strict mode today"
+- "Can you be more direct?"
+📱 Example Conversation
+You: "bought coffee and a muffin for $8.50"
+SmartShop AI (Gentle voice): "I've recorded your coffee and muffin purchase for $8.50. You've spent $83.50 of your $100.00 budget. You have $16.50 left to spend this month!"
+You: "switch to mean"
+SmartShop AI: "Voice set to mean. I won't sugarcoat anything when you're wasting money!"
+You: "how am I doing this week"
+SmartShop AI (Mean voice): "You've blown $83.50 this week. Happy now?
+Breakdown:
 
-### 2. Budget Setting & Alerts
-- Text: "Set $50 budget for Ulta"
-- AI stores the budget and sends alerts when users go over
+Coffee: $8.50 (10.2%)
+Groceries: $45.00 (53.9%)
+Online shopping: $30.00 (35.9%)"
 
-### 3. Manual Purchase Logging
-- Text: "Bought mascara for $12"
-- AI logs it and reminds users later
+**💡 Coming Soon**
 
-### 4. Memory & Purchase History
-- AI remembers recent purchases
-- Gives contextual feedback: “Didn’t you just buy that?”
+Receipt scanning (just snap a photo!)
+Location-based store reminders
+Voice assistant integration (Siri, Alexa)
+Spending insights and pattern recognition
+Custom category budgets
 
-### 5. Custom AI Personality & Text Frequency
-- Choose tone: Gentle / Mean / Tough Love
-- Set # of texts per trip (e.g., 1-3 nudges)
----
+**🔧 Technical Overview**
+SmartShop AI is built with:
 
-##  Development Timeline
-### Week 1 – Setup & Planning
-- ✅ Twilio + OpenAI setup
-- ⬜ Database config
-- ⬜ Flask API
-- ⬜ Ngrok testing
-- ✅ GitHub + Jira integration
+Backend: Flask (Python)
+AI Understanding: OpenAI GPT-3.5 for natural language processing
+SMS Integration: Twilio API
+Database: Firebase Firestore
+Natural Language Understanding: Advanced intent recognition system that understands countless ways to express the same idea
 
-### Week 2 – SMS Chatbot Features
-- ⬜ Budget setting via text
-- ⬜ Manual logging of purchases
-- ⬜ Basic AI nudge responses
+**🔒 Privacy & Security**
+Your financial data is encrypted and securely stored. We never share your information with third parties.
 
-### Week 3 – AI Memory
-- ⬜ Store purchase history
-- ⬜ Reference past purchases
-- ⬜ Begin spending pattern detection
-
-### Week 4 – Voice Shortcut Integration
-- ⬜ Siri Shortcuts setup
-- ⬜ Voice triggers to text AI
-
-### Week 5 – Optional: Receipt Scanning
-- ⬜ Integrate Google Vision API for OCR
-- ⬜ Parse receipt text to store purchases
-
-### Week 6 – Testing & Beta
-- ⬜ End-to-end testing
-- ⬜ Invite 5 users to test
-- ⬜ Debug + refine AI logic
-
----
-
-## Post-MVP (Phase 2 Features)
--  GPS geofencing
--  Receipt scanner auto-logging
--  Mobile app w/ dashboards
--  Full Alexa integration
--  Visual analytics and reporting
-
----
-
-##  Developer Notes
-- Start with Twilio SMS webhooks → Flask API endpoint
-- Use GPT-4 to parse user intent (shopping list, budgets, etc.)
-- Store/retrieve data from Firebase/PostgreSQL
-- Use Ngrok to test endpoints locally before deployment
-
----
-
-## Project Links
-- [GitHub Repo](#)
-- [Jira Board Template](#)
-- [OpenAI Setup Docs](https://platform.openai.com/docs)
-- [Twilio SMS API Docs](https://www.twilio.com/docs/sms)
-
----
-
-## Built With Intention
-Created for users who hate logging things manually. This assistant keeps them accountable while shopping without ever needing to open an app. SMS-first = convenience-first.
+Built with 💙 for people who want to take control of their spending without the hassle of traditional budgeting apps. No rigid formats, no complicated interfaces - just text like you're talking to a friend!
+Reply HELP anytime to see example commands.
+Reply STOP to unsubscribe
 
