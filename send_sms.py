@@ -38,8 +38,9 @@ def determine_intent(message): #this is gonna take th users message and figure o
         return "set_voice", message
     
     # Check for help request
-    if message == "help" or "help" in message:
+    if message == "help" or message == "help?" or message == "menu":
         return "help", None
+        
         
     return "unknown", None
 
